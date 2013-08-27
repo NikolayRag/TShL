@@ -1062,8 +1062,8 @@ proc recentAdd {nam {andArray 1}} {
 proc prjIni fn {
 	wm withdraw .
 
-	catch {load winhelp/winhelp.dll}
-	set h [open winhelp/tclhelp.dic]
+	catch {load winhelp.dll}
+	set h [open tclhelp.dic]
 	array set ::helpWords [read $h]
 	close $h
 
