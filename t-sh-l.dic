@@ -1,3 +1,5 @@
+_#$%^&_: in order for help to work, place TCL's plugin winhelp.dll in TShL folder
+
 tcl		tcl/TclCmd/\\%.htm
 expr		tcl/TclCmd/\\%.htm
 filename	tcl/TclCmd/\\%.htm
