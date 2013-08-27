@@ -1,0 +1,274 @@
+#console show
+#Convert list to be in form of concat, removing one brace level.
+#lflat {a b {c d} {e {f g}}} -> {a b c d e {f g}}
+proc preconcat {inVal} {eval "concat $inVal"}
+
+#Makes list from $lst with $num unique random elements
+proc rndList {lst num} {
+	set rList {}
+	for {set i 0} {$i<$num} {incr i} {while 1 {
+		set r [expr int(rand()*[llength $lst])]
+		set flag 1
+		for {set ii 0} {$ii<$i} {incr ii} {if [string equal [lindex $rList $ii] [lindex $lst $r]] {set flag 0}}
+		if $flag {lappend rList [lindex $lst $r] ;break}
+	}}
+	return $rList
+}
+
+#Return class of var 
+proc classOf {inValNam {bool 0}} {
+	upvar $inValNam inValN
+	if [array exist inValN] {return array}\
+	elseif {$bool&&[string is boolean $inValN]} {return boolean}\
+	elseif {[regexp {^(\+|-)?(0x)?\d+$} $inValN]} {return integer}\
+	elseif {[regexp {^(\+|-)?((\d+\.?\d*)|(\d*\.\d+))(e(\+|-)?\d+)?$} $inValN]} {return float}\
+	elseif {[llength $inValN]>1} {return list}
+	return string
+}
+
+#Return full match for $sw from list of $args
+proc abbriv {sw args} {
+	set args [preconcat $args]
+	foreach el $args {
+		if [string equal $sw $el] {return $el}
+	}
+	foreach el $args {
+		if [string match ${sw}* $el] {return $el}
+	}
+	return {}
+}
+
+#form list as in "list" command but without {}'s
+proc dlist {args} {set e {}; foreach val $args {if {$val!={}} {lappend e $val}}; return $e}
+
+
+#Create, Hide, Show
+proc toplevelHid {w} {toplevel $w; wm withdraw $w}
+proc showTop {w args} {
+	update idletasks
+#anode is Screen, Cursor or window
+	set vx {}; set vy {}; set wx {}; set wy {}; set anode {}; set aside {}; 
+	foreach {var val} $args {
+		switch -- $var {
+			-toolwindow {wm attributes $w -toolwindow $val}
+			-topmost {wm attributes $w -topmost $val}
+			-title {wm title $w $val}
+			-resizable {foreach {v1 v2} $val break; wm resizable $w $v1 $v2}
+			-size {foreach {wx wy} $val break}
+			-align {foreach {anode aside} $val break}
+			-pos {foreach {vx vy} $val break}
+		}
+	}
+	if {$wx!={}} {wm geometry $w ${wx}x${wy}}
+	set wx [winfo reqwidth $w]; set wy [winfo reqheight $w]
+	set rx [winfo x $w]; set ry [winfo y $w]
+	set nx 0; set ny 0; set nw [winfo screenwidth $w]; set nh [winfo screenheight $w]
+	if {[winfo exist $anode]||$anode=={Screen}||$anode=={Cursor}} {
+		if [winfo exist $anode] {set nx [winfo rootx $anode]; set ny [winfo rooty $anode]; set nw [winfo width $anode]; set nh [winfo height $anode]}
+		if {$anode=={Cursor}} {set nx [winfo pointerx $w]; set ny [winfo pointery $w]; set nw 0; set nh 0}
+		switch $aside {
+			nw - w - sw {set rx $nx}
+			n - center - s {set rx [expr ($nx+$nw/2)-$wx/2]}
+			ne - e - se {set rx [expr ($nx+$nw)-$wx]}
+		}
+		switch $aside {
+			nw - n - ne {set ry $ny}
+			w - center - e {set ry [expr ($ny+$nh/2)-$wy/2]}
+			sw - s - se {set ry [expr ($ny+$nh)-$wy]}
+		}
+	}
+	if {$vx!={}} {set rx [expr $rx+$vx]; set ry [expr $ry+$vy]}
+	wm geometry $w +${rx}+${ry}
+
+	wm deiconify $w
+}
+
+
+#Build a toolwindow with given interface and bottomline buttons
+proc modalWnd {w {buttons {Yes No Cancel}} {bDef 0} {wndContent {}} args} {
+	destroy $w
+	toplevelHid $w
+
+	set bNum [llength $buttons]
+	pack [frame $w.buttonsFrame] -side bottom -fill both -expand 1
+	for {set i 0} {$i<$bNum}  {incr i} {
+		set bNam [lindex $buttons $i]
+		button $w.buttonsFrame.b$i -text $bNam -command "destroy $w; set ::privState(waitflag) $i"
+		pack $w.buttonsFrame.b$i -side left -expand 1
+	}
+
+	eval $wndContent
+
+	eval "showTop $w $args -toolwindow 1 -topmost 0 -resizable {0 0} -align {. center}"
+	wm protocol $w WM_DELETE_WINDOW "destroy $w; set ::privState(waitflag) {}"
+	grab $w
+	bind $w <Escape> "destroy $w; set ::privState(waitflag) {}"
+	if {$bDef!={}} {
+		bind $w <Return> "catch {$w.buttonsFrame.b$bDef invoke}"
+		$w.buttonsFrame.b$bDef con -font [concat [font actual [$w.buttonsFrame.b$bDef cget -font] -family] [font actual [$w.buttonsFrame.b$bDef cget -font] -size] bold]
+	}
+	catch {focus -force $w.buttonsFrame.b$bDef}
+
+	vwait ::privState(waitflag)
+	return $::privState(waitflag)
+}
+
+######################################################
+
+
+
+
+
+
+#list| getIniFile filename; List is in form {topic1 {var1 val1 ...} ...}
+#list| getIniTopicList filename
+#list| getIniVarList filename topic
+#pair list| getIniTopic filename topic
+#value| getIniVar filename topic string
+
+#boolean| setIniVar filename topic string value
+#boolean| setIniTopic filename topic list
+#boolean| setIniFile filename list; List is in form {topic1 {var1 val1} ...}
+
+#todo: fix error cathing; fix field swaping
+
+namespace eval ::DBonus::Ini {
+	namespace export iniSetVar iniSetTopic iniSetFile iniGetFile iniGetTopicList iniGetVarList iniGetTopic iniGetVar
+	proc iniSetVar {fNam topic var val {delim =}} {
+		array unset iniArr
+		array set iniArr [getIniFile $fNam $delim]
+		array unset varsArr
+		array set varsArr $iniArr($topic)
+		set varsArr($var) $val
+		array set iniArr [list $topic [array get varsArr]]
+		set iniList [array get iniArr]
+		return [setIniFile $fNam $iniList $delim]
+	}
+	proc iniSetTopic {fNam topic vars {delim =}} {
+		array unset iniArr
+		array set iniArr [getIniFile $fNam $delim]
+		array set iniArr [list $topic $vars]
+		set iniList [array get iniArr]
+		return [setIniFile $fNam $iniList $delim]
+	}
+	proc iniSetFile {fNam iniList {delim =}} {
+		set fH {}
+		set err [catch {
+			set fH [open $fNam w]
+			foreach {topic vars} $iniList {
+				puts -nonewline $fH \[$topic\]\n
+				foreach {var val} $vars {
+					puts -nonewline $fH ${var}${delim}${val}\n
+				}
+				puts $fH ""
+			}
+			flush $fH; close $fH
+		}]
+		catch {close $fH}
+		return $err
+	}
+#
+	proc iniGetFile {fNam {delim =}} {
+		set fH [open $fNam r]
+		set tList {}
+		array set sList {}
+		set t {}
+		while {![eof $fH]} {
+			gets $fH t
+			if {[string index $t 0]=={[}} {lappend tList [string range $t 1 end-1]; break}
+		}
+		while {![eof $fH]} {
+			gets $fH t
+			if {$t=={}} continue
+			if {[string index $t 0]=={[}} {
+				lappend tList [array get sList]
+				array unset sList
+				lappend tList [string range $t 1 end-1]
+			} else {
+				set eq [string first $delim $t]
+				set str [string range $t 0 [expr $eq-1]]
+				set sList($str) [string range $t [expr $eq+1] end]
+			}
+		}
+		lappend tList [array get sList]
+		close $fH
+		return $tList
+	}
+	proc iniGetTopicList fNam {
+		set fH [open $fNam r]
+		set tList {}
+		set t {}
+		while {![eof $fH]} {
+			gets $fH t
+			if {[string index $t 0]=={[}} {lappend tList [string range $t 1 end-1]}
+		}
+		close $fH
+		return $tList
+	}
+	proc iniGetVarList {fNam tNam {delim =}} {
+		set fH [open $fNam r]
+		set sList {}
+		set t {}
+		while {![eof $fH]} {
+			gets $fH t
+			if [string equal $t \[${tNam}\]] break
+		}
+		if {[eof $fH]&&![string equal $t $tNam]} {close $fH; error "String not found"}
+		while {![eof $fH]} {
+			gets $fH t
+			if {$t=={}} continue
+			if {[string index $t 0]=={[}} break
+			set str [string range $t 0 [expr [string first $delim $t]-1]]
+			lappend sList $str
+		}
+		close $fH
+		return $sList
+	}
+	proc iniGetTopic {fNam tNam {delim =}} {
+		set fH [open $fNam r]
+		set sList {}
+		set str {}
+		set t {}
+		while {![eof $fH]} {
+			gets $fH t
+			if [string equal $t \[${tNam}\]] break
+		}
+		if {[eof $fH]&&![string equal $t $tNam]} {close $fH; error "String not found"}
+		while {![eof $fH]} {
+			gets $fH t
+			if {$t=={}} continue
+			if {[string index $t 0]=={[}} break
+			set eq [string first $delim $t]
+			set str [string range $t 0 [expr $eq-1]]
+			lappend sList $str [string range $t [expr $eq+1] end]
+		}
+		close $fH
+		return $sList
+	}
+	proc iniGetVar {fNam tNam sNam {delim =}} {
+		set fH [open $fNam r]
+		set sVal {}
+		set str {}
+		set t {}
+		while {![eof $fH]} {
+			if [string equal [gets $fH] \[${tNam}\]] break
+		}
+		while {![eof $fH]} {
+			gets $fH t
+			if {$t=={}} continue
+			if {[string index $t 0]=={[}} {close $fH; error "String not found"}
+			set eq [string first $delim $t]
+			set str [string range $t 0 [expr $eq-1]]
+			if [string equal $str $sNam] {
+				set sVal [string range $t [expr $eq+1] end]
+				break
+			}
+		}
+		if {[eof $fH]&&![string equal $str $sNam]} {close $fH; error "String not found"}
+		close $fH
+		return $sVal
+	}
+}
+
+catch {namespace import ::DBonus::Ini::*}
+
