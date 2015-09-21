@@ -692,12 +692,12 @@ proc setTopName {} {
 }
 proc getIni {} {
 	cd $::pwd
-	array set ::intState [lindex [iniGetFile T-Sh-L.ini] 1]
+	array set ::intState [lindex [iniGetFile t-sh-l.ini] 1]
 	catch {cd $::intState(dir)}
 }
 proc setIni {} {
 	cd $::pwd
-	iniSetFile T-Sh-L.ini [list {T-Sh-L} [array get ::intState]]
+	iniSetFile t-sh-l.ini [list {T-Sh-L} [array get ::intState]]
 	catch {cd $::intState(dir)}
 }
 proc setWrap {} {if {$::intState(wrap)==1} {.outText configure -wrap word} else {.outText configure -wrap none}}
@@ -1063,7 +1063,7 @@ proc prjIni fn {
 	wm withdraw .
 
 	catch {load winhelp.dll}
-	set h [open tclhelp.dic]
+	set h [open t-sh-l.dic]
 	array set ::helpWords [read $h]
 	close $h
 
